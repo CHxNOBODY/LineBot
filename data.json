@@ -1,0 +1,4 @@
+[
+  { "id": "01", "name": "Ploy", "amount": 25, "cycle_day": 1 },
+  { "id": "02", "name": "Mint", "amount": 25, "cycle_day": 1 }
+]
