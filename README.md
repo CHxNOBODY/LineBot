@@ -61,12 +61,25 @@ add the bot, or use `/add <name>` for anyone quiet. `/members` shows who it know
 
 ### 1. Create the LINE channel
 
-1. Go to the [LINE Developers Console](https://developers.line.biz/console/), create
-   a provider, then a **Messaging API** channel.
-2. **Basic settings** → copy the **Channel secret**.
-3. **Messaging API** → issue a long-lived **Channel access token**.
+Since 4 September 2024 you can't create a Messaging API channel in the Developers
+Console — it starts from the Official Account Manager. A **LINE Login** channel is
+a different thing and has no access token; make sure you end up on a **Messaging
+API** channel.
+
+1. In [LINE Official Account Manager](https://manager.line.biz/), create a LINE
+   Official Account.
+2. **Settings → Messaging API → Enable Messaging API**, and choose a provider.
+   This creates the Messaging API channel.
+3. Open that channel in the
+   [LINE Developers Console](https://developers.line.biz/console/):
+   - **Basic settings** → copy the **Channel secret** → `LINE_CHANNEL_SECRET`
+   - **Messaging API** → issue a long-lived **Channel access token** →
+     `LINE_CHANNEL_ACCESS_TOKEN`
+
+   Both values must come from this same channel, or every webhook fails
+   signature validation.
 4. **Messaging API** → turn **Use webhook** on, and turn **Auto-reply messages**
-   and **Greeting messages** off.
+   and **Greeting messages** off (LINE's canned replies otherwise talk over the bot).
 5. **Messaging API** → set **Allow bot to join group chats** to **on**, otherwise
    you can't add it to your group.
 
