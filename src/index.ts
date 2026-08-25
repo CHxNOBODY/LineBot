@@ -1,5 +1,5 @@
-import { middleware, type WebhookRequestBody } from '@line/bot-sdk';
-import express from 'express';
+import { SignatureValidationFailed, middleware, type WebhookRequestBody } from '@line/bot-sdk';
+import express, { type NextFunction, type Request, type Response } from 'express';
 import { config } from './config.js';
 import { prisma } from './db/client.js';
 import { handleEvent } from './line/handlers.js';
@@ -34,14 +34,39 @@ app.post(
   },
 );
 
+/**
+ * Anything hitting /webhook without a valid X-Line-Signature isn't LINE, so say
+ * 401 and move on rather than logging a stack trace for every internet scanner.
+ */
+app.use((err: unknown, _req: Request, res: Response, next: NextFunction) => {
+  if (res.headersSent) return next(err);
+  if (err instanceof SignatureValidationFailed) {
+    res.status(401).json({ error: 'invalid signature' });
+    return;
+  }
+  console.error('unhandled error', err);
+  res.status(500).json({ error: 'internal error' });
+});
+
 const server = app.listen(config.port, () => {
   console.log(`🧾 bill splitter listening on :${config.port} (${config.timezone})`);
 });
 
-for (const signal of ['SIGINT', 'SIGTERM'] as const) {
-  process.on(signal, () => {
-    server.close(() => {
-      void prisma.$disconnect().then(() => process.exit(0));
-    });
+/**
+ * `server.close()` waits for in-flight connections, which keep-alive clients
+ * hold open indefinitely — so give it a deadline and exit regardless. Without
+ * this the process survives Ctrl-C and keeps the port bound.
+ */
+function shutdown() {
+  const forced = setTimeout(() => process.exit(0), 5_000);
+  forced.unref();
+
+  server.close(() => {
+    void prisma.$disconnect().then(() => process.exit(0));
   });
+  server.closeIdleConnections?.();
+}
+
+for (const signal of ['SIGINT', 'SIGTERM'] as const) {
+  process.once(signal, shutdown);
 }
