@@ -13,7 +13,7 @@ from linebot.models import MessageEvent, TextMessage, TextSendMessage, QuickRepl
 load_dotenv()
 app = Flask(__name__)
 
-CHANNEL_SECRET = os.getenv("LINE_CHANNEL_SECRET")
+CHANNEL_SECRET = os.getenv("c3f08bf95a9c44dc2ad4170de17e0418")
 CHANNEL_ACCESS_TOKEN = os.getenv("LINE_CHANNEL_ACCESS_TOKEN")
 TZ_NAME = os.getenv("TZ", "Asia/Bangkok")
 
@@ -168,3 +168,4 @@ def cron_monthly():
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.getenv("PORT", 3000)))
+    
