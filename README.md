@@ -150,6 +150,7 @@ test/money.test.ts      money + parser tests
 | `npm run db:push` | sync schema to the database |
 | `npm run db:studio` | browse the data |
 | `npm run preview` | dump Flex JSON for the simulator |
+| `npm run check:cards` | validate credentials + every card against LINE's schema |
 
 ## Deploying
 

@@ -17,7 +17,8 @@
     "db:generate": "prisma generate",
     "db:studio": "prisma studio",
     "postinstall": "prisma generate",
-    "preview": "tsx src/preview.ts"
+    "preview": "tsx src/preview.ts",
+    "check:cards": "tsx src/checkCards.ts"
   },
   "dependencies": {
     "@line/bot-sdk": "^9.5.0",
