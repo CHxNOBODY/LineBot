@@ -1,0 +1,95 @@
+import type { WebhookEvent, messagingApi } from '@line/bot-sdk';
+import { execute, type Ctx } from '../commands/execute.js';
+import { parseCommand, type Command } from '../commands/parse.js';
+import * as repo from '../db/repo.js';
+import { fetchDisplayName, lineClient, sourceOf } from './client.js';
+import { helpCard } from './flex/cards.js';
+import { face } from './flex/theme.js';
+
+/** LINE caps a single reply at five messages. */
+const MAX_REPLY = 5;
+
+export async function handleEvent(event: WebhookEvent): Promise<void> {
+  switch (event.type) {
+    case 'message':
+      if (event.message.type === 'text') await onText(event.replyToken, event, event.message.text);
+      return;
+    case 'postback':
+      await onPostback(event);
+      return;
+    case 'join':
+    case 'follow':
+      await reply(event.replyToken, [helpCard()]);
+      return;
+    case 'memberJoined':
+      await reply(event.replyToken, [helpCard()]);
+      return;
+    default:
+      return;
+  }
+}
+
+async function reply(replyToken: string, messages: messagingApi.Message[]): Promise<void> {
+  if (messages.length === 0) return;
+  await lineClient.replyMessage({ replyToken, messages: messages.slice(0, MAX_REPLY) });
+}
+
+/**
+ * Every command needs to know which group it's in and who's talking, and both
+ * are worth recording even when the message isn't a command — that's how the
+ * bot learns who's in the group.
+ */
+async function buildCtx(event: {
+  source: { type: string; userId?: string; groupId?: string; roomId?: string };
+}): Promise<Ctx | null> {
+  const source = sourceOf(event.source);
+  const userId = event.source.userId;
+  if (!source || !userId) return null;
+
+  const group = await repo.getOrCreateGroup(source.lineId);
+  const displayName = await fetchDisplayName(source, userId);
+  const actor = await repo.rememberMember(group.id, userId, displayName);
+
+  return { groupId: group.id, actor };
+}
+
+async function onText(replyToken: string, event: Parameters<typeof buildCtx>[0], text: string) {
+  const command = parseCommand(text);
+  // Still build the context for non-commands: seeing someone chat is how we
+  // learn they exist, which `/bill ... @all` depends on.
+  const ctx = await buildCtx(event);
+  if (!ctx || !command) return;
+
+  await reply(replyToken, await execute(command, ctx));
+}
+
+/** Postback payloads come from the buttons on the bill card. */
+function commandFromPostback(data: string): Command | null {
+  const params = new URLSearchParams(data);
+  const action = params.get('action');
+  const code = params.get('bill');
+  if (!action || !code) return null;
+
+  switch (action) {
+    case 'pay':
+      return { kind: 'pay', code };
+    case 'remind':
+      return { kind: 'remind', code };
+    case 'show':
+      return { kind: 'showBill', code };
+    default:
+      return null;
+  }
+}
+
+async function onPostback(event: Extract<WebhookEvent, { type: 'postback' }>) {
+  const command = commandFromPostback(event.postback.data);
+  if (!command) return;
+
+  const ctx = await buildCtx(event);
+  if (!ctx) return;
+
+  await reply(event.replyToken, await execute(command, ctx));
+}
+
+export const greeting = `${face.wave} หวัดดี! เราคือบอทหารบิล พิมพ์ /help เพื่อดูวิธีใช้`;

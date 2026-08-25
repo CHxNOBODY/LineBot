@@ -1,0 +1,78 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  // Swap to `provider = "postgresql"` and point DATABASE_URL at Postgres
+  // if you deploy somewhere without a persistent disk. No other change needed.
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+/// A LINE group (or room, or 1:1 chat) the bot lives in.
+model Group {
+  id        String   @id @default(cuid())
+  /// LINE groupId / roomId / userId depending on the chat type.
+  lineId    String   @unique
+  createdAt DateTime @default(now())
+
+  members Member[]
+  bills   Bill[]
+}
+
+/// Someone the bot has seen speak in a group. LINE only lets unverified bots
+/// enumerate group members via `getGroupMemberIds` on verified accounts, so we
+/// learn about people as they talk instead.
+model Member {
+  id          String   @id @default(cuid())
+  groupId     String
+  /// LINE userId. Null when added manually by name (e.g. someone who never talks).
+  lineUserId  String?
+  displayName String
+  createdAt   DateTime @default(now())
+
+  group     Group  @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  paidBills Bill[] @relation("BillPayer")
+  shares    Share[]
+
+  @@unique([groupId, lineUserId])
+  @@index([groupId])
+}
+
+/// One expense that a single person fronted for the group.
+model Bill {
+  id        String   @id @default(cuid())
+  groupId   String
+  /// Short human-facing code shown on the card, e.g. "A3F". Unique per group.
+  code      String
+  title     String
+  /// Total in the smallest currency unit (satang) to keep the math exact.
+  totalMinor Int
+  payerId   String
+  note      String?
+  createdAt DateTime @default(now())
+  settledAt DateTime?
+
+  group  Group   @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  payer  Member  @relation("BillPayer", fields: [payerId], references: [id], onDelete: Cascade)
+  shares Share[]
+
+  @@unique([groupId, code])
+  @@index([groupId, settledAt])
+}
+
+/// What one person owes on one bill.
+model Share {
+  id          String    @id @default(cuid())
+  billId      String
+  memberId    String
+  /// Amount owed in the smallest currency unit (satang).
+  amountMinor Int
+  paidAt      DateTime?
+
+  bill   Bill   @relation(fields: [billId], references: [id], onDelete: Cascade)
+  member Member @relation(fields: [memberId], references: [id], onDelete: Cascade)
+
+  @@unique([billId, memberId])
+  @@index([memberId, paidAt])
+}

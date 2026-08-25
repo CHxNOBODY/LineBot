@@ -1,0 +1,24 @@
+node_modules/
+dist/
+*.log
+
+# env / secrets
+.env
+.env.*
+!.env.example
+
+# prisma sqlite database
+prisma/*.db
+prisma/*.db-journal
+prisma/migrations/dev.db*
+
+# python leftovers from the old bot
+venv/
+__pycache__/
+*.pyc
+
+# editors / os
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
