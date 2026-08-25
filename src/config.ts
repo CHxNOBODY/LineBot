@@ -7,6 +7,14 @@ function required(name: string): string {
       `Missing ${name}. Copy .env.example to .env and fill it in from the LINE Developers Console.`,
     );
   }
+  // Starting with the placeholders still copied from .env.example gets you a
+  // server that boots fine and then 401s on every LINE call, which is a
+  // miserable thing to debug. Fail loudly instead.
+  if (value.startsWith('your_') && value.endsWith('_here')) {
+    throw new Error(
+      `${name} is still the placeholder from .env.example. Paste the real value from the LINE Developers Console.`,
+    );
+  }
   return value;
 }
 

@@ -5,7 +5,7 @@ chase the rest. Open a bill in the group chat and the bot posts a card showing
 the total and exactly who owes what, tracks who has paid, and @-mentions the
 stragglers when you tell it to nudge them.
 
-```
+```text
 🧾 ข้าวเย็นหมูกระทะ                      #1
 25 Aug · 💸 chxnobody จ่ายไปก่อน
 ────────────────────────────────
@@ -104,7 +104,7 @@ npm run preview -- summary  # the /bills card
 
 ## Layout
 
-```
+```text
 src/
   index.ts              Express app + LINE signature middleware
   config.ts             env loading, fails fast on missing secrets
