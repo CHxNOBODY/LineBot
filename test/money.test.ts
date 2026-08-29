@@ -88,15 +88,27 @@ test('pay and paid commands', () => {
   assert.deepEqual(parseCommand('/paid 3 mint'), {
     kind: 'markPaid',
     code: '3',
-    name: 'mint',
+    target: { kind: 'name', name: 'mint' },
     paid: true,
   });
   assert.deepEqual(parseCommand('/unpay 3 mint'), {
     kind: 'markPaid',
     code: '3',
-    name: 'mint',
+    target: { kind: 'name', name: 'mint' },
     paid: false,
   });
+  // Bare /paid means "I paid", same as tapping your own row on the card.
+  assert.deepEqual(parseCommand('/paid 3'), {
+    kind: 'markPaid',
+    code: '3',
+    target: null,
+    paid: true,
+  });
+});
+
+test('/sync is its own command, with a Thai alias', () => {
+  assert.deepEqual(parseCommand('/sync'), { kind: 'syncMembers' });
+  assert.deepEqual(parseCommand('/ซิงค์'), { kind: 'syncMembers' });
 });
 
 test('Thai aliases work', () => {

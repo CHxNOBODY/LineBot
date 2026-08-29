@@ -30,14 +30,56 @@ function progressBar(paidMinor: number, totalMinor: number): Box {
   };
 }
 
-/** One "1. mint ......... 600 บาท ✅" line. */
-function shareRow(
-  index: number,
-  name: string,
-  amountMinor: number,
-  paid: boolean,
-  currency: string,
-): Box {
+/**
+ * The right-hand slot on a share row: a tappable chip while the share is
+ * open, a plain ✅ once it's in. Both are the same fixed width so the amount
+ * column stays aligned however the rows are mixed.
+ */
+function tickSlot(billCode: string, memberId: string, name: string, paid: boolean): Box {
+  const slot = { type: 'box', layout: 'vertical', flex: 0, width: '46px' } as const;
+
+  if (paid) {
+    return {
+      ...slot,
+      contents: [{ type: 'text', text: face.done, size: 'sm', align: 'center' }],
+    };
+  }
+
+  return {
+    ...slot,
+    backgroundColor: palette.pinkSoft,
+    cornerRadius: '12px',
+    paddingAll: '5px',
+    action: {
+      type: 'postback',
+      label: 'ติ๊ก',
+      data: `action=tick&bill=${billCode}&member=${memberId}`,
+      displayText: `ติ๊กว่า ${name} จ่ายบิล #${billCode} แล้ว`,
+    },
+    contents: [
+      {
+        type: 'text',
+        text: 'ติ๊ก',
+        size: 'xxs',
+        weight: 'bold',
+        color: palette.pink,
+        align: 'center',
+      },
+    ],
+  };
+}
+
+/** One "1. mint ......... 600 บาท [ ติ๊ก ]" line. */
+function shareRow(opts: {
+  index: number;
+  billCode: string;
+  memberId: string;
+  name: string;
+  amountMinor: number;
+  paid: boolean;
+  currency: string;
+}): Box {
+  const { index, name, amountMinor, paid, currency } = opts;
   return {
     type: 'box',
     layout: 'horizontal',
@@ -75,12 +117,7 @@ function shareRow(
         flex: 3,
         wrap: false,
       },
-      {
-        type: 'text',
-        text: paid ? face.done : face.waiting,
-        size: 'sm',
-        flex: 0,
-      },
+      tickSlot(opts.billCode, opts.memberId, name, paid),
     ],
   };
 }
@@ -97,7 +134,15 @@ export function billCard(
   const settled = bill.settledAt !== null;
 
   const rows: Component[] = bill.shares.map((share, i) =>
-    shareRow(i, share.member.displayName, share.amountMinor, share.paidAt !== null, currency),
+    shareRow({
+      index: i,
+      billCode: bill.code,
+      memberId: share.memberId,
+      name: share.member.displayName,
+      amountMinor: share.amountMinor,
+      paid: share.paidAt !== null,
+      currency,
+    }),
   );
 
   const header: Box = {

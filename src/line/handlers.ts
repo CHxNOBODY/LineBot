@@ -3,8 +3,9 @@ import { execute, type Ctx } from '../commands/execute.js';
 import { parseCommand, type Command } from '../commands/parse.js';
 import * as repo from '../db/repo.js';
 import { fetchDisplayName, lineClient, sourceOf } from './client.js';
-import { helpCard } from './flex/cards.js';
+import { helpCard, noticeCard } from './flex/cards.js';
 import { face } from './flex/theme.js';
+import { registerMembers, syncRoster } from './roster.js';
 
 /** LINE caps a single reply at five messages. */
 const MAX_REPLY = 5;
@@ -18,11 +19,13 @@ export async function handleEvent(event: WebhookEvent): Promise<void> {
       await onPostback(event);
       return;
     case 'join':
+      await onJoin(event);
+      return;
     case 'follow':
       await reply(event.replyToken, [helpCard()]);
       return;
     case 'memberJoined':
-      await reply(event.replyToken, [helpCard()]);
+      await onMemberJoined(event);
       return;
     default:
       return;
@@ -50,7 +53,51 @@ async function buildCtx(event: {
   const displayName = await fetchDisplayName(source, userId);
   const actor = await repo.rememberMember(group.id, userId, displayName);
 
-  return { groupId: group.id, actor };
+  return { groupId: group.id, actor, source };
+}
+
+/**
+ * The bot was just added to a chat. A verified account can pull the whole
+ * roster right here; an unverified one starts empty and has to be told so,
+ * otherwise `/bill ... @all` silently splits between nobody.
+ */
+async function onJoin(event: Extract<WebhookEvent, { type: 'join' }>): Promise<void> {
+  const source = sourceOf(event.source);
+  if (!source) {
+    await reply(event.replyToken, [helpCard()]);
+    return;
+  }
+
+  const group = await repo.getOrCreateGroup(source.lineId);
+  const synced = await syncRoster(group.id, source);
+
+  const intro = synced.ok
+    ? noticeCard(`${face.wave} หวัดดี! รู้จักทุกคนในกลุ่มแล้ว ${synced.total} คน`)
+    : noticeCard(`${face.wave} หวัดดี! ให้ทุกคนพิมพ์อะไรสักครั้ง บอทจะได้รู้จักนะ`);
+
+  await reply(event.replyToken, [intro, helpCard()]);
+}
+
+/** Someone joined a chat the bot is already in — register them on the spot. */
+async function onMemberJoined(
+  event: Extract<WebhookEvent, { type: 'memberJoined' }>,
+): Promise<void> {
+  const source = sourceOf(event.source);
+  if (!source) return;
+
+  const group = await repo.getOrCreateGroup(source.lineId);
+  const userIds = event.joined.members
+    .map((m) => m.userId)
+    .filter((id): id is string => typeof id === 'string');
+
+  const { added } = await registerMembers(group.id, source, userIds);
+
+  const messages: messagingApi.Message[] = [];
+  if (added > 0) {
+    messages.push(noticeCard(`${face.wave} ยินดีต้อนรับ! เพิ่ม ${added} คนเข้ารายชื่อแล้ว`));
+  }
+  messages.push(helpCard());
+  await reply(event.replyToken, messages);
 }
 
 async function onText(replyToken: string, event: Parameters<typeof buildCtx>[0], text: string) {
@@ -77,6 +124,13 @@ function commandFromPostback(data: string): Command | null {
       return { kind: 'remind', code };
     case 'show':
       return { kind: 'showBill', code };
+    case 'tick': {
+      // The per-person chips on the bill card. execute() still enforces that
+      // only the payer may tick someone other than themselves.
+      const memberId = params.get('member');
+      if (!memberId) return null;
+      return { kind: 'markPaid', code, target: { kind: 'member', id: memberId }, paid: true };
+    }
     default:
       return null;
   }

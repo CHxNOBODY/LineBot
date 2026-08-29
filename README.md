@@ -45,7 +45,13 @@ Type these in the group chat. Thai aliases work too (`/หาร`, `/จ่า�
 | `/me` | What you owe and what you're owed |
 | `/members` | Everyone the bot has seen |
 | `/add ชื่อ` | Add someone who never talks in the group |
+| `/sync` | Pull the whole member list from LINE (verified accounts only) |
 | `/help` | The command menu |
+
+Nobody has to type any of this to settle up, though: every unpaid row on the
+bill card carries a **ติ๊ก** chip. Tap the one on your own row to mark yourself
+paid; the person who fronted the money can tap anyone's. The card refreshes
+with the row struck through and the progress bar moved.
 
 The person who fronted the money has their own share ticked off automatically —
 you don't owe yourself. A bill closes itself once every share is paid and drops
@@ -53,9 +59,23 @@ off `/bills`.
 
 ### How the bot learns who's in the group
 
-Unverified LINE bots can't list a group's members, so the bot registers people
-as it sees them talk. Get everyone to send one message in the group after you
-add the bot, or use `/add <name>` for anyone quiet. `/members` shows who it knows.
+There are three routes, and which ones you get depends on your Official Account:
+
+1. **Anyone who joins after the bot does** is registered automatically from the
+   `memberJoined` event — no typing required.
+2. **Anyone who speaks** is registered on their first message.
+3. **`/sync`** asks LINE for the entire roster at once, and the bot also tries
+   this by itself the moment it's added to a group.
+
+Route 3 needs a **verified or premium** Official Account. LINE refuses it for
+ordinary accounts with `403 Access to this API is not available for your
+account`, and `/sync` will say so in plain Thai rather than looking broken.
+Apply for verification in the LINE Official Account Manager under
+**Settings → Account settings** if you want it.
+
+Until then, routes 1 and 2 cover most of it: people already in the group before
+the bot arrived need to say something once, or be added with `/add <name>`.
+`/members` shows who the bot knows.
 
 ## Setup
 
@@ -97,8 +117,15 @@ npm run dev
 LINE needs a public HTTPS URL. For local development:
 
 ```bash
-npx localtunnel --port 3000     # or: ngrok http 3000
+npx cloudflared tunnel --url http://localhost:3000
 ```
+
+Prefer cloudflared over localtunnel. localtunnel drops its connection silently
+and often; when it does, LINE's **Verify** button reports a **503** that looks
+like your server is broken when in fact nothing is listening at the tunnel's
+edge. Keep the tunnel in its own visible terminal so you can see it die, and
+re-paste the new URL after restarting it — a quick tunnel gets a fresh random
+hostname each run.
 
 Set the webhook URL in the console to `https://<your-tunnel>/webhook` and hit
 **Verify**. Then add the bot to your group and send `/help`.

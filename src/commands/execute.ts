@@ -2,9 +2,11 @@ import type { messagingApi } from '@line/bot-sdk';
 import type { Member as DbMember } from '@prisma/client';
 import { config } from '../config.js';
 import * as repo from '../db/repo.js';
+import type { SourceId } from '../line/client.js';
 import { billCard } from '../line/flex/billCard.js';
 import { helpCard, noticeCard, personalCard, summaryCard } from '../line/flex/cards.js';
 import { face } from '../line/flex/theme.js';
+import { syncRoster } from '../line/roster.js';
 import { formatAmount, parseAmount, splitWithFixed } from '../utils/money.js';
 import type { Command, Target } from './parse.js';
 
@@ -13,6 +15,8 @@ export type Ctx = {
   groupId: string;
   /** The person who typed the command. */
   actor: DbMember;
+  /** The LINE-side chat, for the API calls that need its id rather than ours. */
+  source: SourceId;
 };
 
 type Reply = messagingApi.Message[];
@@ -32,6 +36,9 @@ export async function execute(command: Command, ctx: Ctx): Promise<Reply> {
 
     case 'members':
       return [await membersReply(ctx)];
+
+    case 'syncMembers':
+      return syncMembers(ctx);
 
     case 'addMember':
       return [await addMember(command.name, ctx)];
@@ -81,6 +88,37 @@ async function membersReply(ctx: Ctx): Promise<messagingApi.Message> {
   }
   const list = members.map((m, i) => `${i + 1}. ${m.displayName}`).join('\n');
   return noticeCard(`${face.cat} คนที่บอทรู้จัก (${members.length})\n${list}`);
+}
+
+/**
+ * Ask LINE for the entire member list. Only verified accounts may, so the
+ * refusal path has to actually explain itself — "error" would send someone
+ * hunting through their own code for a bug that isn't there.
+ */
+async function syncMembers(ctx: Ctx): Promise<Reply> {
+  const result = await syncRoster(ctx.groupId, ctx.source);
+
+  if (!result.ok) {
+    if (result.reason === 'notAGroup') {
+      return [noticeCard(`${face.cat} คำสั่งนี้ใช้ได้ในกลุ่มเท่านั้นนะ`, 'oops')];
+    }
+    if (result.reason === 'forbidden') {
+      return [
+        noticeCard(
+          `${face.cat} LINE ไม่ให้ดึงรายชื่อสมาชิก เพราะบัญชีบอทยังไม่ได้ยืนยัน (verified)\n\n` +
+            `ให้ทุกคนพิมพ์อะไรสักครั้งในกลุ่ม หรือใช้ /add ชื่อ เพิ่มเองก็ได้นะ`,
+          'oops',
+        ),
+      ];
+    }
+    return [noticeCard(`${face.cat} ดึงรายชื่อไม่สำเร็จ ลองใหม่อีกทีนะ`, 'oops')];
+  }
+
+  const headline =
+    result.added === 0
+      ? `${face.done} รู้จักครบทั้ง ${result.total} คนอยู่แล้ว`
+      : `${face.sparkle} เจอเพิ่ม ${result.added} คน (ทั้งหมด ${result.total} คน)`;
+  return [noticeCard(headline), await membersReply(ctx)];
 }
 
 async function addMember(name: string, ctx: Ctx): Promise<messagingApi.Message> {
@@ -223,18 +261,27 @@ async function markSomeonePaid(
   const bill = await repo.findBill(ctx.groupId, command.code);
   if (!bill) return [notFound(command.code)];
 
-  // No name given means the sender is talking about themselves.
+  // No target means the sender is talking about themselves.
+  const target = command.target;
   let targetId = ctx.actor.id;
   let targetName = ctx.actor.displayName;
 
-  if (command.name) {
+  if (target) {
     const members = bill.shares.map((s) => s.member);
-    const match = repo.resolveMember(members, command.name);
+    const label = target.kind === 'name' ? `"${target.name}"` : 'คนนั้น';
+
+    // A card carries the member id, so it needs no name matching — but the
+    // card may have been posted before the bill changed under it.
+    const match =
+      target.kind === 'member'
+        ? (members.find((m) => m.id === target.id) ?? null)
+        : repo.resolveMember(members, target.name);
+
     if (match === null) {
-      return [noticeCard(`${face.cat} "${command.name}" ไม่ได้อยู่ในบิล #${bill.code}`, 'oops')];
+      return [noticeCard(`${face.cat} ${label} ไม่ได้อยู่ในบิล #${bill.code}`, 'oops')];
     }
     if (match === 'ambiguous') {
-      return [noticeCard(`${face.cat} "${command.name}" ตรงกับหลายคน พิมพ์ชื่อให้ยาวขึ้นนะ`, 'oops')];
+      return [noticeCard(`${face.cat} ${label} ตรงกับหลายคน พิมพ์ชื่อให้ยาวขึ้นนะ`, 'oops')];
     }
     targetId = match.id;
     targetName = match.displayName;

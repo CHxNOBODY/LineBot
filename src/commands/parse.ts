@@ -9,6 +9,15 @@ export type Target =
   | { kind: 'everyone' }
   | { kind: 'person'; name: string; fixedRaw: string | null };
 
+/**
+ * Who a `/paid` is about. Typed commands can only name someone, but the tick
+ * chips on the bill card already know the exact member, so they skip the
+ * name-matching guesswork entirely.
+ */
+export type PaidTarget =
+  | { kind: 'name'; name: string }
+  | { kind: 'member'; id: string };
+
 export type Command =
   | { kind: 'help' }
   | { kind: 'createBill'; title: string; amountRaw: string; targets: Target[]; payerName: string | null }
@@ -16,9 +25,10 @@ export type Command =
   | { kind: 'listBills' }
   | { kind: 'me' }
   | { kind: 'members' }
+  | { kind: 'syncMembers' }
   | { kind: 'addMember'; name: string }
   | { kind: 'pay'; code: string | null }
-  | { kind: 'markPaid'; code: string; name: string | null; paid: boolean }
+  | { kind: 'markPaid'; code: string; target: PaidTarget | null; paid: boolean }
   | { kind: 'remind'; code: string | null }
   | { kind: 'unknown'; verb: string };
 
@@ -43,6 +53,9 @@ const ALIASES: Record<string, string> = {
   ของฉัน: 'me',
   members: 'members',
   คน: 'members',
+  sync: 'sync',
+  ซิงค์: 'sync',
+  ดึงรายชื่อ: 'sync',
   add: 'add',
   เพิ่ม: 'add',
   help: 'help',
@@ -83,6 +96,8 @@ export function parseCommand(rawText: string): Command | null {
       return { kind: 'me' };
     case 'members':
       return { kind: 'members' };
+    case 'sync':
+      return { kind: 'syncMembers' };
 
     case 'add': {
       const name = tokens.join(' ').trim();
@@ -103,8 +118,13 @@ export function parseCommand(rawText: string): Command | null {
     case 'unpay': {
       if (!tokens[0] || !isCode(tokens[0])) return { kind: 'unknown', verb: rawVerb };
       const code = stripHash(tokens[0]);
-      const name = tokens.slice(1).join(' ').trim() || null;
-      return { kind: 'markPaid', code, name, paid: verb === 'paid' };
+      const name = tokens.slice(1).join(' ').trim();
+      return {
+        kind: 'markPaid',
+        code,
+        target: name ? { kind: 'name', name } : null,
+        paid: verb === 'paid',
+      };
     }
 
     case 'bill':

@@ -259,6 +259,7 @@ const HELP: HelpEntry[] = [
   { cmd: '/me', desc: 'ดูว่าเราติดใคร ใครติดเรา' },
   { cmd: '/members', desc: 'ดูรายชื่อที่บอทรู้จัก' },
   { cmd: '/add ชื่อ', desc: 'เพิ่มคนที่ไม่เคยพิมพ์ในกลุ่ม' },
+  { cmd: '/sync', desc: 'ดึงรายชื่อทุกคนจาก LINE (บัญชี verified เท่านั้น)' },
   { cmd: '/help', desc: 'เมนูนี้' },
 ];
 
