@@ -57,8 +57,8 @@ test('/bill picks the amount out of a multi-word title', () => {
     amountRaw: '1200',
     payerName: null,
     targets: [
-      { kind: 'person', name: 'mint', fixedRaw: null },
-      { kind: 'person', name: 'ploy', fixedRaw: null },
+      { kind: 'person', name: 'mint', fixedRaw: null, userId: null },
+      { kind: 'person', name: 'ploy', fixedRaw: null, userId: null },
     ],
   });
 });
@@ -71,10 +71,60 @@ test('/bill supports pinned amounts and an explicit payer', () => {
     amountRaw: '1200',
     payerName: 'chxnobody',
     targets: [
-      { kind: 'person', name: 'mint', fixedRaw: '500' },
-      { kind: 'person', name: 'ploy', fixedRaw: null },
+      { kind: 'person', name: 'mint', fixedRaw: '500', userId: null },
+      { kind: 'person', name: 'ploy', fixedRaw: null, userId: null },
     ],
   });
+});
+
+test('an amount straight after a tag pins that person', () => {
+  const cmd = parseCommand('/bill บุฟเฟ่ 8000 @august 6000');
+  assert.deepEqual(cmd, {
+    kind: 'createBill',
+    title: 'บุฟเฟ่',
+    amountRaw: '8000',
+    payerName: null,
+    targets: [{ kind: 'person', name: 'august', fixedRaw: '6000', userId: null }],
+  });
+});
+
+test('the "=" spellings all mean the same thing', () => {
+  const pinned = { kind: 'person', name: 'august', fixedRaw: '6000', userId: null };
+  for (const text of [
+    '/bill บุฟเฟ่ 8000 @august=6000',
+    '/bill บุฟเฟ่ 8000 @august =6000',
+    '/bill บุฟเฟ่ 8000 @august= 6000',
+    '/bill บุฟเฟ่ 8000 @august 6000',
+  ]) {
+    const cmd = parseCommand(text);
+    assert.equal(cmd?.kind, 'createBill');
+    assert.deepEqual(cmd.kind === 'createBill' ? cmd.targets : null, [pinned], text);
+  }
+});
+
+test('pinning one person still leaves the others sharing the rest', () => {
+  const cmd = parseCommand('/bill หมูกระทะ 900 @august 500 mint ploy');
+  assert.deepEqual(cmd.kind === 'createBill' ? cmd.targets : null, [
+    { kind: 'person', name: 'august', fixedRaw: '500', userId: null },
+    { kind: 'person', name: 'mint', fixedRaw: null, userId: null },
+    { kind: 'person', name: 'ploy', fixedRaw: null, userId: null },
+  ]);
+});
+
+test('a real @-mention carries the user id through', () => {
+  const text = '/bill บุฟเฟ่ 8000 @august 6000';
+  const at = text.indexOf('@august');
+  const cmd = parseCommand(text, [{ index: at, length: '@august'.length, userId: 'U0123' }]);
+  assert.deepEqual(cmd.kind === 'createBill' ? cmd.targets : null, [
+    { kind: 'person', name: 'august', fixedRaw: '6000', userId: 'U0123' },
+  ]);
+});
+
+test('an @All mention means everyone, whatever it is spelled', () => {
+  const text = '/bill บุฟเฟ่ 8000 @All';
+  const at = text.indexOf('@All');
+  const cmd = parseCommand(text, [{ index: at, length: '@All'.length, everyone: true }]);
+  assert.deepEqual(cmd.kind === 'createBill' ? cmd.targets : null, [{ kind: 'everyone' }]);
 });
 
 test('/bill with a lone number shows that bill instead of creating one', () => {
@@ -104,6 +154,11 @@ test('pay and paid commands', () => {
     target: null,
     paid: true,
   });
+});
+
+test('/join registers the sender, like the card button does', () => {
+  assert.deepEqual(parseCommand('/join'), { kind: 'registerSelf' });
+  assert.deepEqual(parseCommand('/ลงชื่อ'), { kind: 'registerSelf' });
 });
 
 test('/sync is its own command, with a Thai alias', () => {

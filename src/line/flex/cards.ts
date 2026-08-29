@@ -5,12 +5,41 @@ import { dotColor, face, palette } from './theme.js';
 
 type Component = messagingApi.FlexComponent;
 
+/**
+ * Tap-to-register. Unverified bots can't enumerate a group, and asking people
+ * to type a command to introduce themselves is a step most of them won't take
+ * — a button they can hit once is the difference between a roster that fills
+ * up and one that doesn't.
+ */
+export function registerFooter(): messagingApi.FlexBox {
+  return {
+    type: 'box',
+    layout: 'vertical',
+    paddingAll: '12px',
+    contents: [
+      {
+        type: 'button',
+        style: 'primary',
+        height: 'sm',
+        color: palette.mint,
+        action: {
+          type: 'postback',
+          label: 'ฉันอยู่ในกลุ่มนี้ 🙋',
+          data: 'action=join',
+          displayText: 'ฉันอยู่ในกลุ่มนี้',
+        },
+      },
+    ],
+  };
+}
+
 function shell(
   altText: string,
   title: string,
   subtitle: string,
   body: Component[],
   accent: string = palette.pinkSoft,
+  footer?: messagingApi.FlexBox,
 ): messagingApi.FlexMessage {
   return {
     type: 'flex',
@@ -37,13 +66,22 @@ function shell(
         spacing: 'md',
         contents: body,
       },
-      styles: { header: { separator: false } },
+      // LINE rejects a `styles.footer` block when there's no footer to style.
+      ...(footer ? { footer, styles: { header: { separator: false }, footer: { separator: false } } } : { styles: { header: { separator: false } } }),
     },
   };
 }
 
-/** Small one-off message for confirmations and errors. */
-export function noticeCard(text: string, tone: 'happy' | 'oops' = 'happy'): messagingApi.FlexMessage {
+/**
+ * Small one-off message for confirmations and errors. `withRegister` hangs the
+ * tap-to-register button underneath, for the notices that exist precisely
+ * because the bot doesn't know who's in the group yet.
+ */
+export function noticeCard(
+  text: string,
+  tone: 'happy' | 'oops' = 'happy',
+  withRegister = false,
+): messagingApi.FlexMessage {
   const accent = tone === 'happy' ? palette.mintSoft : palette.sunSoft;
   return {
     type: 'flex',
@@ -58,6 +96,9 @@ export function noticeCard(text: string, tone: 'happy' | 'oops' = 'happy'): mess
         paddingAll: '16px',
         contents: [{ type: 'text', text, wrap: true, size: 'sm', color: palette.text }],
       },
+      ...(withRegister
+        ? { footer: registerFooter(), styles: { footer: { separator: false } } }
+        : {}),
     },
   };
 }
@@ -250,7 +291,8 @@ type HelpEntry = { cmd: string; desc: string };
 const HELP: HelpEntry[] = [
   { cmd: '/bill ข้าวเย็น 1200', desc: 'เปิดบิล หารทุกคนในกลุ่มเท่า ๆ กัน' },
   { cmd: '/bill ข้าวเย็น 1200 mint ploy', desc: 'หารเฉพาะคนที่ระบุ' },
-  { cmd: '/bill ข้าวเย็น 1200 mint=500 ploy', desc: 'ล็อกยอดบางคน ที่เหลือหารกัน' },
+  { cmd: '/bill ข้าวเย็น 1200 @mint 500 ploy', desc: 'แท็กคนแล้วใส่ยอด ที่เหลือหารกัน' },
+  { cmd: '/bill บุฟเฟ่ 8000 @august 6000', desc: 'แท็กคนเดียว ที่เหลือเป็นของคนที่ออกเงิน' },
   { cmd: '/pay 3', desc: 'บอกว่าเราจ่ายบิล #3 แล้ว' },
   { cmd: '/paid 3 mint', desc: 'คนที่ออกเงินยืนยันว่า mint จ่ายแล้ว' },
   { cmd: '/unpay 3 mint', desc: 'ยกเลิกการติ๊กว่าจ่ายแล้ว' },
@@ -260,6 +302,7 @@ const HELP: HelpEntry[] = [
   { cmd: '/members', desc: 'ดูรายชื่อที่บอทรู้จัก' },
   { cmd: '/add ชื่อ', desc: 'เพิ่มคนที่ไม่เคยพิมพ์ในกลุ่ม' },
   { cmd: '/sync', desc: 'ดึงรายชื่อทุกคนจาก LINE (บัญชี verified เท่านั้น)' },
+  { cmd: '/join', desc: 'ลงชื่อว่าอยู่ในกลุ่ม (หรือแตะปุ่มข้างล่าง)' },
   { cmd: '/help', desc: 'เมนูนี้' },
 ];
 
@@ -282,5 +325,6 @@ export function helpCard(): messagingApi.FlexMessage {
     'พิมพ์คำสั่งพวกนี้ในกลุ่มได้เลย',
     [{ type: 'box', layout: 'vertical', contents: rows }],
     palette.sunSoft,
+    registerFooter(),
   );
 }

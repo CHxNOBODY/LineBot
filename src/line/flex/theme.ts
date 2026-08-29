@@ -29,6 +29,7 @@ export const face = {
   money: '💸',
   done: '✅',
   waiting: '🕐',
+  pending: '⏳',
   party: '🎉',
   wave: '👋',
   cat: '🐱',

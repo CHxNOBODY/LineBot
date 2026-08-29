@@ -32,9 +32,9 @@ function bill(settled: boolean): BillWithShares {
     id: 'b', groupId: 'g', code: '1', title: 'ข้าวเย็นหมูกระทะ', totalMinor: 120000,
     payerId: chx.id, note: null, createdAt: at, settledAt: settled ? at : null, payer: chx,
     shares: [
-      { id: '1', billId: 'b', memberId: chx.id, amountMinor: 40000, paidAt: at, member: chx },
-      { id: '2', billId: 'b', memberId: mint.id, amountMinor: 40000, paidAt: paid(settled), member: mint },
-      { id: '3', billId: 'b', memberId: ploy.id, amountMinor: 40000, paidAt: paid(settled), member: ploy },
+      { id: '1', billId: 'b', memberId: chx.id, amountMinor: 40000, claimedAt: null, paidAt: at, member: chx },
+      { id: '2', billId: 'b', memberId: mint.id, amountMinor: 40000, claimedAt: null, paidAt: paid(settled), member: mint },
+      { id: '3', billId: 'b', memberId: ploy.id, amountMinor: 40000, claimedAt: settled ? null : at, paidAt: paid(settled), member: ploy },
     ],
   };
 }
@@ -48,7 +48,7 @@ const cur = config.currency;
 const opts = { currency: cur, timezone: config.timezone };
 
 const cases: [string, unknown][] = [
-  ['bill card (open, has footer buttons)', billCard(bill(false), opts)],
+  ['bill card (open, one claim awaiting confirmation)', billCard(bill(false), opts)],
   ['bill card (settled, no footer)', billCard(bill(true), opts)],
   ['group summary /bills', summaryCard([bill(false)], debts, cur)],
   ['personal /me (owed)', personalCard('chxnobody', [], debts, cur)],
@@ -57,6 +57,7 @@ const cases: [string, unknown][] = [
   ['help card', helpCard()],
   ['notice happy', noticeCard('✅ รับทราบ')],
   ['notice oops', noticeCard('🐱 ไม่เจอบิลนะ', 'oops')],
+  ['notice with tap-to-register footer', noticeCard('👋 ยังไม่รู้จักใครเลย', 'oops', true)],
   ['empty summary', summaryCard([], [], cur)],
   ['remind textV2 with mentions', {
     type: 'textV2',

@@ -68,6 +68,9 @@ model Share {
   memberId    String
   /// Amount owed in the smallest currency unit (satang).
   amountMinor Int
+  /// When this person said they had paid. A claim on its own moves nothing —
+  /// the bill's payer confirms it into `paidAt`, and it is cleared either way.
+  claimedAt   DateTime?
   paidAt      DateTime?
 
   bill   Bill   @relation(fields: [billId], references: [id], onDelete: Cascade)

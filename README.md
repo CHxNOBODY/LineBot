@@ -34,9 +34,10 @@ Type these in the group chat. Thai aliases work too (`/หาร`, `/จ่า�
 | --- | --- |
 | `/bill ข้าวเย็น 1200` | Open a bill, split evenly between everyone the bot knows |
 | `/bill ข้าวเย็น 1200 mint ploy` | Split only between the people you name |
-| `/bill ข้าวเย็น 1200 mint=500 ploy` | Pin some amounts; the rest share what's left |
+| `/bill ข้าวเย็น 1200 @mint 500 ploy` | Tag someone and type their amount; the rest share what's left |
+| `/bill บุฟเฟ่ 8000 @august 6000` | Tag one person; whoever fronted the money covers the remainder |
 | `/bill ข้าวเย็น 1200 mint ploy by=nobody` | Someone other than you fronted the money |
-| `/pay` / `/pay 3` | Mark your own share paid (newest unpaid bill if no number) |
+| `/pay` / `/pay 3` | Tell the group you've paid — waits for the bill owner to confirm |
 | `/paid 3 mint` | The person who paid confirms someone has settled up |
 | `/unpay 3 mint` | Undo a tick |
 | `/remind 3` | Re-post the card and @-mention everyone still owing |
@@ -46,6 +47,7 @@ Type these in the group chat. Thai aliases work too (`/หาร`, `/จ่า�
 | `/members` | Everyone the bot has seen |
 | `/add ชื่อ` | Add someone who never talks in the group |
 | `/sync` | Pull the whole member list from LINE (verified accounts only) |
+| `/join` | Put yourself on the roster (the help card has a button for this) |
 | `/help` | The command menu |
 
 Nobody has to type any of this to settle up, though: every unpaid row on the
@@ -53,29 +55,47 @@ bill card carries a **ติ๊ก** chip. Tap the one on your own row to mark y
 paid; the person who fronted the money can tap anyone's. The card refreshes
 with the row struck through and the progress bar moved.
 
+### Paying is a two-step handshake
+
+Saying you paid doesn't mark you paid. `/pay`, and the **จ่ายแล้ว 💗** button,
+put your share into a *claimed* state — the card shows ⏳ รอยืนยัน and the
+progress bar doesn't move. The person who fronted the money then taps the
+**ยืนยัน** chip on your row to confirm the money actually arrived, and only
+then does the share count as paid.
+
+You cannot confirm your own claim. Tapping ยืนยัน on your own row just repeats
+the claim, because the whole point is that someone else checks. The bill's
+owner is exempt from all of this: their own share, and anyone they tick
+directly, goes straight through — they're the one being paid, so there's nobody
+to check with. To reverse a confirmation, the owner types `/unpay 3 <name>`.
+
 The person who fronted the money has their own share ticked off automatically —
 you don't owe yourself. A bill closes itself once every share is paid and drops
 off `/bills`.
 
 ### How the bot learns who's in the group
 
-There are three routes, and which ones you get depends on your Official Account:
+There are four routes, and which ones you get depends on your Official Account:
 
-1. **Anyone who joins after the bot does** is registered automatically from the
-   `memberJoined` event — no typing required.
-2. **Anyone who speaks** is registered on their first message.
-3. **`/sync`** asks LINE for the entire roster at once, and the bot also tries
+1. **The ฉันอยู่ในกลุ่มนี้ 🙋 button** on the help card. One tap puts the tapper
+   on the roster — the fastest way to onboard people who were already in the
+   group before the bot arrived. `/join` does the same for anyone who'd rather
+   type.
+2. **Anyone who joins after the bot does** is registered automatically from the
+   `memberJoined` event — no typing, no tapping.
+3. **Anyone who speaks** is registered on their first message.
+4. **`/sync`** asks LINE for the entire roster at once, and the bot also tries
    this by itself the moment it's added to a group.
 
-Route 3 needs a **verified or premium** Official Account. LINE refuses it for
+Route 4 needs a **verified or premium** Official Account. LINE refuses it for
 ordinary accounts with `403 Access to this API is not available for your
 account`, and `/sync` will say so in plain Thai rather than looking broken.
 Apply for verification in the LINE Official Account Manager under
 **Settings → Account settings** if you want it.
 
-Until then, routes 1 and 2 cover most of it: people already in the group before
-the bot arrived need to say something once, or be added with `/add <name>`.
-`/members` shows who the bot knows.
+Until then, routes 1–3 cover it in practice: post `/help` in the group and have
+everyone tap the button once. `/add <name>` still handles anyone who never
+turns up. `/members` shows who the bot knows.
 
 ## Setup
 

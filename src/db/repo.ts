@@ -129,6 +129,27 @@ export async function listOpenBills(groupId: string): Promise<BillWithShares[]> 
 }
 
 /**
+ * Record that someone says they've paid. A claim is not money: it settles
+ * nothing and moves no totals, it just puts the share in front of the bill's
+ * payer to confirm.
+ */
+export async function setShareClaimed(
+  billId: string,
+  memberId: string,
+  claimed: boolean,
+): Promise<BillWithShares | null> {
+  const share = await prisma.share.findUnique({ where: { billId_memberId: { billId, memberId } } });
+  if (!share) return null;
+
+  await prisma.share.update({
+    where: { id: share.id },
+    data: { claimedAt: claimed ? new Date() : null },
+  });
+
+  return prisma.bill.findUnique({ where: { id: billId }, include: billInclude });
+}
+
+/**
  * Mark one person's share paid (or unpaid). Settles the whole bill once every
  * share is in, so it drops off `/bills`.
  */
@@ -140,9 +161,10 @@ export async function setSharePaid(
   const share = await prisma.share.findUnique({ where: { billId_memberId: { billId, memberId } } });
   if (!share) return null;
 
+  // Either answer resolves an outstanding claim, so it never lingers.
   await prisma.share.update({
     where: { id: share.id },
-    data: { paidAt: paid ? new Date() : null },
+    data: { paidAt: paid ? new Date() : null, claimedAt: null },
   });
 
   const remaining = await prisma.share.count({ where: { billId, paidAt: null } });

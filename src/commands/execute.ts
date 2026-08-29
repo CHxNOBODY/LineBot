@@ -6,7 +6,7 @@ import type { SourceId } from '../line/client.js';
 import { billCard } from '../line/flex/billCard.js';
 import { helpCard, noticeCard, personalCard, summaryCard } from '../line/flex/cards.js';
 import { face } from '../line/flex/theme.js';
-import { syncRoster } from '../line/roster.js';
+import { registerMembers, syncRoster } from '../line/roster.js';
 import { formatAmount, parseAmount, splitWithFixed } from '../utils/money.js';
 import type { Command, Target } from './parse.js';
 
@@ -39,6 +39,9 @@ export async function execute(command: Command, ctx: Ctx): Promise<Reply> {
 
     case 'syncMembers':
       return syncMembers(ctx);
+
+    case 'registerSelf':
+      return registerSelf(ctx);
 
     case 'addMember':
       return [await addMember(command.name, ctx)];
@@ -84,10 +87,33 @@ const notFound = (code: string) =>
 async function membersReply(ctx: Ctx): Promise<messagingApi.Message> {
   const members = await repo.listMembers(ctx.groupId);
   if (members.length === 0) {
-    return noticeCard(`${face.wave} ยังไม่รู้จักใครเลย ให้ทุกคนพิมพ์อะไรก็ได้ในกลุ่มสักครั้ง`, 'oops');
+    return noticeCard(
+      `${face.wave} ยังไม่รู้จักใครเลย แตะปุ่มข้างล่างเพื่อลงชื่อได้เลย`,
+      'oops',
+      true,
+    );
   }
   const list = members.map((m, i) => `${i + 1}. ${m.displayName}`).join('\n');
   return noticeCard(`${face.cat} คนที่บอทรู้จัก (${members.length})\n${list}`);
+}
+
+/**
+ * The tap-to-register button, and `/join`.
+ *
+ * `buildCtx` has already upserted whoever tapped — that's the whole point of
+ * building a `Ctx` for every event — so there is nothing left to write here.
+ * This just confirms it and hands back the roster so the group can see itself
+ * filling up.
+ */
+async function registerSelf(ctx: Ctx): Promise<Reply> {
+  const members = await repo.listMembers(ctx.groupId);
+  const list = members.map((m, i) => `${i + 1}. ${m.displayName}`).join('\n');
+  return [
+    noticeCard(
+      `${face.sparkle} รู้จัก ${ctx.actor.displayName} แล้ว!\n\n` +
+        `${face.cat} ตอนนี้มี ${members.length} คน\n${list}`,
+    ),
+  ];
 }
 
 /**
@@ -138,7 +164,17 @@ async function resolveTargets(
   targets: Target[],
   ctx: Ctx,
 ): Promise<{ members: DbMember[]; fixed: (number | null)[] } | string> {
-  const known = await repo.listMembers(ctx.groupId);
+  let known = await repo.listMembers(ctx.groupId);
+
+  // Someone tagged with a real @-mention may not be on the roster yet. Their
+  // user id is right there in the mention, so add them rather than rejecting
+  // the bill and making them go say hello first.
+  const tagged = targets.flatMap((t) => (t.kind === 'person' && t.userId ? [t.userId] : []));
+  const missing = tagged.filter((id) => !known.some((m) => m.lineUserId === id));
+  if (missing.length > 0) {
+    await registerMembers(ctx.groupId, ctx.source, missing);
+    known = await repo.listMembers(ctx.groupId);
+  }
 
   const wantsEveryone = targets.length === 0 || targets.some((t) => t.kind === 'everyone');
   if (wantsEveryone) {
@@ -152,7 +188,10 @@ async function resolveTargets(
   for (const target of targets) {
     if (target.kind !== 'person') continue;
 
-    const match = repo.resolveMember(known, target.name);
+    // A tag is unambiguous; a typed name has to be matched and might not be.
+    const match = target.userId
+      ? (known.find((m) => m.lineUserId === target.userId) ?? null)
+      : repo.resolveMember(known, target.name);
     if (match === null) return `ไม่รู้จัก "${target.name}" — พิมพ์ /members ดูรายชื่อ หรือ /add ${target.name}`;
     if (match === 'ambiguous') return `"${target.name}" ตรงกับหลายคน พิมพ์ชื่อให้ยาวขึ้นหน่อยนะ`;
     if (members.some((m) => m.id === match.id)) continue; // named twice, count once
@@ -191,6 +230,21 @@ async function createBill(
       return [noticeCard(`${face.cat} ไม่รู้ว่า "${command.payerName}" คือใคร`, 'oops')];
     }
     payer = match;
+  }
+
+  // "/bill บุฟเฟ่ 8000 @august 6000" names one person and pins them, which
+  // leaves 2000 unaccounted for. The payer fronted the whole 8000, so the
+  // remainder is theirs — that's what someone means by typing this, and the
+  // alternative is rejecting the most natural way to write a bill.
+  const everyoneIsPinned = resolved.fixed.every((amount) => amount !== null);
+  const pinnedSum = resolved.fixed.reduce<number>((sum, amount) => sum + (amount ?? 0), 0);
+  if (
+    everyoneIsPinned &&
+    pinnedSum < totalMinor &&
+    !resolved.members.some((m) => m.id === payer.id)
+  ) {
+    resolved.members.push(payer);
+    resolved.fixed.push(null);
   }
 
   const amounts = splitWithFixed(totalMinor, resolved.fixed);
@@ -233,6 +287,12 @@ async function billForActor(code: string | null, ctx: Ctx): Promise<repo.BillWit
   return mine.at(-1) ?? (await repo.latestBill(ctx.groupId));
 }
 
+/**
+ * "I paid." Everyone except the person owed has to be confirmed: a claim is
+ * one tap from someone with an obvious interest in the answer, so it waits for
+ * the payer rather than moving the bill on its own. The payer ticking their own
+ * share has nobody to answer to, so that goes straight through.
+ */
 async function payOwnShare(code: string | null, ctx: Ctx): Promise<Reply> {
   const bill = await billForActor(code, ctx);
   if (!bill) return [notFound(code ?? '?')];
@@ -245,13 +305,35 @@ async function payOwnShare(code: string | null, ctx: Ctx): Promise<Reply> {
     return [noticeCard(`${face.done} บิล #${bill.code} จ่ายไปแล้วนี่นา`, 'oops')];
   }
 
-  const updated = await repo.setSharePaid(bill.id, ctx.actor.id, true);
+  if (bill.payerId === ctx.actor.id) {
+    const updated = await repo.setSharePaid(bill.id, ctx.actor.id, true);
+    if (!updated) return [notFound(bill.code)];
+    const headline = updated.settledAt
+      ? `${face.party} บิล #${updated.code} ครบแล้ว!`
+      : `${face.done} รับทราบ ${ctx.actor.displayName} จ่าย ${formatAmount(share.amountMinor)} ${currency} แล้ว`;
+    return [noticeCard(headline), card(updated)];
+  }
+
+  if (share.claimedAt) {
+    return [
+      noticeCard(
+        `${face.pending} บอกไปแล้วนะ กำลังรอ ${bill.payer.displayName} ยืนยันอยู่`,
+        'oops',
+      ),
+    ];
+  }
+
+  const updated = await repo.setShareClaimed(bill.id, ctx.actor.id, true);
   if (!updated) return [notFound(bill.code)];
 
-  const headline = updated.settledAt
-    ? `${face.party} บิล #${updated.code} ครบแล้ว!`
-    : `${face.done} รับทราบ ${ctx.actor.displayName} จ่าย ${formatAmount(share.amountMinor)} ${currency} แล้ว`;
-  return [noticeCard(headline), card(updated)];
+  return [
+    noticeCard(
+      `${face.pending} บอก ${bill.payer.displayName} แล้วว่า ${ctx.actor.displayName} ` +
+        `จ่าย ${formatAmount(share.amountMinor)} ${currency} แล้ว\n\n` +
+        `รอกดยืนยันสักครู่นะ ${face.heart}`,
+    ),
+    card(updated, `${ctx.actor.displayName} แจ้งว่าจ่ายบิล #${bill.code} แล้ว`),
+  ];
 }
 
 async function markSomeonePaid(
@@ -287,6 +369,13 @@ async function markSomeonePaid(
     targetName = match.displayName;
   }
 
+  // Ticking your own row is a claim, never a confirmation — otherwise anyone
+  // could tap the ยืนยัน chip on their own line and settle their own debt,
+  // which is the exact thing the payer is supposed to be checking.
+  if (command.paid && targetId === ctx.actor.id && bill.payerId !== ctx.actor.id) {
+    return payOwnShare(bill.code, ctx);
+  }
+
   // Only the person who fronted the money gets to tick off other people.
   if (targetId !== ctx.actor.id && bill.payerId !== ctx.actor.id) {
     return [
@@ -300,9 +389,10 @@ async function markSomeonePaid(
   const updated = await repo.setSharePaid(bill.id, targetId, command.paid);
   if (!updated) return [notFound(bill.code)];
 
+  const wasClaimed = bill.shares.some((s) => s.memberId === targetId && s.claimedAt !== null);
   const headline = command.paid
-    ? `${face.done} ติ๊กให้ ${targetName} แล้ว`
-    : `${face.waiting} ยกเลิกการติ๊กของ ${targetName} แล้ว`;
+    ? `${face.done} ${wasClaimed ? 'ยืนยันแล้ว' : 'ติ๊กให้'} ${targetName} ${wasClaimed ? 'ว่าจ่ายแล้ว' : 'แล้ว'}`
+    : `${face.waiting} ${wasClaimed ? 'ยังไม่ได้รับเงินจาก' : 'ยกเลิกการติ๊กของ'} ${targetName}`;
   return [noticeCard(headline), card(updated)];
 }
 

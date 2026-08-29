@@ -1,6 +1,6 @@
 import type { WebhookEvent, messagingApi } from '@line/bot-sdk';
 import { execute, type Ctx } from '../commands/execute.js';
-import { parseCommand, type Command } from '../commands/parse.js';
+import { parseCommand, type Command, type Mention } from '../commands/parse.js';
 import * as repo from '../db/repo.js';
 import { fetchDisplayName, lineClient, sourceOf } from './client.js';
 import { helpCard, noticeCard } from './flex/cards.js';
@@ -13,7 +13,7 @@ const MAX_REPLY = 5;
 export async function handleEvent(event: WebhookEvent): Promise<void> {
   switch (event.type) {
     case 'message':
-      if (event.message.type === 'text') await onText(event.replyToken, event, event.message.text);
+      if (event.message.type === 'text') await onText(event.replyToken, event, event.message);
       return;
     case 'postback':
       await onPostback(event);
@@ -100,8 +100,42 @@ async function onMemberJoined(
   await reply(event.replyToken, messages);
 }
 
-async function onText(replyToken: string, event: Parameters<typeof buildCtx>[0], text: string) {
-  const command = parseCommand(text);
+/** Just the parts of a text message this module needs. */
+type TextMessage = {
+  text: string;
+  mention?: {
+    mentionees: Array<{
+      type: string;
+      index: number;
+      length: number;
+      userId?: string;
+      isSelf?: boolean;
+    }>;
+  };
+};
+
+/**
+ * LINE reports mentions as offsets into the text plus a user id, where the
+ * person allows the bot to see their profile. Mentions of the bot itself are
+ * dropped: tagging the bot addresses it, it doesn't make the bot owe money.
+ */
+function mentionsOf(message: TextMessage): Mention[] {
+  return (message.mention?.mentionees ?? [])
+    .filter((m) => !m.isSelf)
+    .map((m) => ({
+      index: m.index,
+      length: m.length,
+      userId: m.userId,
+      everyone: m.type === 'all',
+    }));
+}
+
+async function onText(
+  replyToken: string,
+  event: Parameters<typeof buildCtx>[0],
+  message: TextMessage,
+) {
+  const command = parseCommand(message.text, mentionsOf(message));
   // Still build the context for non-commands: seeing someone chat is how we
   // learn they exist, which `/bill ... @all` depends on.
   const ctx = await buildCtx(event);
@@ -114,8 +148,13 @@ async function onText(replyToken: string, event: Parameters<typeof buildCtx>[0],
 function commandFromPostback(data: string): Command | null {
   const params = new URLSearchParams(data);
   const action = params.get('action');
+  if (!action) return null;
+
+  // The roster button is the one action that isn't about a particular bill.
+  if (action === 'join') return { kind: 'registerSelf' };
+
   const code = params.get('bill');
-  if (!action || !code) return null;
+  if (!code) return null;
 
   switch (action) {
     case 'pay':

@@ -40,12 +40,13 @@ function sampleBill(settled: boolean): BillWithShares {
     settledAt: settled ? at : null,
     payer: chx,
     shares: [
-      { id: 's1', billId: 'demo-bill', memberId: chx.id, amountMinor: 40000, paidAt: at, member: chx },
+      { id: 's1', billId: 'demo-bill', memberId: chx.id, amountMinor: 40000, claimedAt: null, paidAt: at, member: chx },
       {
         id: 's2',
         billId: 'demo-bill',
         memberId: mint.id,
         amountMinor: 40000,
+        claimedAt: settled ? null : at,
         paidAt: settled ? at : null,
         member: mint,
       },
@@ -54,6 +55,7 @@ function sampleBill(settled: boolean): BillWithShares {
         billId: 'demo-bill',
         memberId: ploy.id,
         amountMinor: 40000,
+        claimedAt: null,
         paidAt: settled ? at : null,
         member: ploy,
       },

@@ -30,39 +30,49 @@ function progressBar(paidMinor: number, totalMinor: number): Box {
   };
 }
 
+/** Where one person's share has got to. */
+export type ShareState = 'owing' | 'claimed' | 'paid';
+
 /**
- * The right-hand slot on a share row: a tappable chip while the share is
- * open, a plain ✅ once it's in. Both are the same fixed width so the amount
- * column stays aligned however the rows are mixed.
+ * The right-hand slot on a share row: a tappable chip until the money is
+ * confirmed, then a plain ✅. All three states are the same fixed width so the
+ * amount column stays aligned however the rows are mixed.
+ *
+ * A claimed row reads "ยืนยัน" because the only person who should act on it is
+ * the payer. The card is the same for everyone, though, so who may actually do
+ * what is settled server-side, not by hiding chips.
  */
-function tickSlot(billCode: string, memberId: string, name: string, paid: boolean): Box {
+function tickSlot(billCode: string, memberId: string, name: string, state: ShareState): Box {
   const slot = { type: 'box', layout: 'vertical', flex: 0, width: '46px' } as const;
 
-  if (paid) {
+  if (state === 'paid') {
     return {
       ...slot,
       contents: [{ type: 'text', text: face.done, size: 'sm', align: 'center' }],
     };
   }
 
+  const claimed = state === 'claimed';
   return {
     ...slot,
-    backgroundColor: palette.pinkSoft,
+    backgroundColor: claimed ? palette.sunSoft : palette.pinkSoft,
     cornerRadius: '12px',
     paddingAll: '5px',
     action: {
       type: 'postback',
-      label: 'ติ๊ก',
+      label: claimed ? 'ยืนยัน' : 'ติ๊ก',
       data: `action=tick&bill=${billCode}&member=${memberId}`,
-      displayText: `ติ๊กว่า ${name} จ่ายบิล #${billCode} แล้ว`,
+      displayText: claimed
+        ? `ยืนยันว่า ${name} จ่ายบิล #${billCode} แล้ว`
+        : `ติ๊กว่า ${name} จ่ายบิล #${billCode} แล้ว`,
     },
     contents: [
       {
         type: 'text',
-        text: 'ติ๊ก',
+        text: claimed ? 'ยืนยัน' : 'ติ๊ก',
         size: 'xxs',
         weight: 'bold',
-        color: palette.pink,
+        color: claimed ? palette.sun : palette.pink,
         align: 'center',
       },
     ],
@@ -76,10 +86,11 @@ function shareRow(opts: {
   memberId: string;
   name: string;
   amountMinor: number;
-  paid: boolean;
+  state: ShareState;
   currency: string;
 }): Box {
-  const { index, name, amountMinor, paid, currency } = opts;
+  const { index, name, amountMinor, state, currency } = opts;
+  const paid = state === 'paid';
   return {
     type: 'box',
     layout: 'horizontal',
@@ -94,7 +105,11 @@ function shareRow(opts: {
         width: '8px',
         height: '8px',
         cornerRadius: '4px',
-        backgroundColor: paid ? palette.hairline : dotColor(index),
+        backgroundColor: paid
+          ? palette.hairline
+          : state === 'claimed'
+            ? palette.sun
+            : dotColor(index),
         contents: [{ type: 'filler' }],
         flex: 0,
       },
@@ -117,7 +132,7 @@ function shareRow(opts: {
         flex: 3,
         wrap: false,
       },
-      tickSlot(opts.billCode, opts.memberId, name, paid),
+      tickSlot(opts.billCode, opts.memberId, name, state),
     ],
   };
 }
@@ -133,6 +148,8 @@ export function billCard(
   const outstanding = bill.totalMinor - paidMinor;
   const settled = bill.settledAt !== null;
 
+  const claimedCount = bill.shares.filter((s) => s.paidAt === null && s.claimedAt !== null).length;
+
   const rows: Component[] = bill.shares.map((share, i) =>
     shareRow({
       index: i,
@@ -140,7 +157,7 @@ export function billCard(
       memberId: share.memberId,
       name: share.member.displayName,
       amountMinor: share.amountMinor,
-      paid: share.paidAt !== null,
+      state: share.paidAt ? 'paid' : share.claimedAt ? 'claimed' : 'owing',
       currency,
     }),
   );
@@ -204,7 +221,8 @@ export function billCard(
         type: 'text',
         text: settled
           ? `${face.sparkle} ครบแล้ว ทุกคนจ่ายเรียบร้อย ${face.sparkle}`
-          : `เก็บได้ ${formatAmount(paidMinor)} · ค้างอีก ${formatAmount(outstanding)} ${currency}`,
+          : `เก็บได้ ${formatAmount(paidMinor)} · ค้างอีก ${formatAmount(outstanding)} ${currency}` +
+            (claimedCount > 0 ? `\n${face.pending} รอยืนยัน ${claimedCount} คน` : ''),
         size: 'xxs',
         color: settled ? palette.paid : palette.muted,
         align: 'center',
